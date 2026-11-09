@@ -124,10 +124,27 @@ class App(tk.Tk):
         self.dest = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Downloads"))
         ttk.Entry(top, textvariable=self.dest).grid(row=2, column=1, columnspan=2, sticky="ew", padx=4)
         ttk.Button(top, text="Sfoglia...", command=self.browse).grid(row=2, column=3)
-        self.btn_find = ttk.Button(top, text="Cerca immagini", command=self.start_find)
-        self.btn_find.grid(row=3, column=1, sticky="w", padx=4, pady=6)
-        self.btn_clear = ttk.Button(top, text="Pulisci", command=self.clear)
-        self.btn_clear.grid(row=3, column=2, sticky="w", pady=6)
+        row3 = ttk.Frame(top)
+        row3.grid(row=3, column=1, columnspan=3, sticky="w", pady=6)
+        self.btn_find = ttk.Button(row3, text="Cerca immagini", command=self.start_find)
+        self.btn_find.pack(side="left", padx=4)
+        self.btn_clear = ttk.Button(row3, text="Pulisci", command=self.clear)
+        self.btn_clear.pack(side="left")
+        self.ask_exists = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row3, text="Chiedi se presente", variable=self.ask_exists
+                        ).pack(side="left", padx=(12, 0))
+        self.custom_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row3, text="Scegli la cartella delle immagini", variable=self.custom_on,
+                        command=self.toggle_custom).pack(side="left", padx=(12, 0))
+        # riga visibile solo se il flag e' attivo
+        self.custom_row = ttk.Frame(top)
+        self.custom_row.grid(row=4, column=0, columnspan=4, sticky="ew")
+        ttk.Label(self.custom_row, text="Cartella immagini:").pack(side="left")
+        self.custom = tk.StringVar()
+        ttk.Entry(self.custom_row, textvariable=self.custom).pack(
+            side="left", fill="x", expand=True, padx=4)
+        ttk.Button(self.custom_row, text="Sfoglia...", command=self.browse_custom).pack(side="left")
+        self.custom_row.grid_remove()
         top.columnconfigure(2, weight=1)
 
         self.status = tk.StringVar(value="Inserisci l'indirizzo e premi 'Cerca immagini'.")
@@ -174,6 +191,45 @@ class App(tk.Tk):
         d = filedialog.askdirectory(initialdir=self.dest.get())
         if d:
             self.dest.set(d)
+
+    def toggle_custom(self):
+        if self.custom_on.get():
+            self.custom_row.grid()
+        else:
+            self.custom_row.grid_remove()
+
+    def browse_custom(self):
+        d = filedialog.askdirectory(initialdir=self.custom.get() or self.dest.get())
+        if d:
+            self.custom.set(os.path.normpath(d))
+
+    def ask_conflict(self, folder):
+        """Chiede cosa fare se la cartella esiste gia'. Ritorna 'sovrascrivi', 'nuova' o 'salta'."""
+        win = tk.Toplevel(self)
+        win.title("Cartella già presente")
+        win.transient(self)
+        win.resizable(False, False)
+        ttk.Label(win, text=f"La cartella esiste già e contiene dei file:\n{folder}\n\nCosa vuoi fare?",
+                  padding=12, justify="left").pack()
+        res = {"v": "salta"}
+
+        def pick(v):
+            res["v"] = v
+            win.destroy()
+
+        bt = ttk.Frame(win, padding=(12, 0, 12, 12))
+        bt.pack()
+        ttk.Button(bt, text="Sovrascrivi", command=lambda: pick("sovrascrivi")).pack(side="left", padx=4)
+        ttk.Button(bt, text="Nuova cartella (_2, _3...)", command=lambda: pick("nuova")).pack(side="left", padx=4)
+        b_skip = ttk.Button(bt, text="Salta", command=lambda: pick("salta"))
+        b_skip.pack(side="left", padx=4)
+        b_skip.focus_set()
+        win.bind("<Return>", lambda e: pick("salta"))
+        win.bind("<Escape>", lambda e: pick("salta"))
+        win.protocol("WM_DELETE_WINDOW", lambda: pick("salta"))
+        win.grab_set()
+        self.wait_window(win)
+        return res["v"]
 
     def cleanup_tmp(self):
         if self.tmp and os.path.isdir(self.tmp):
@@ -300,25 +356,74 @@ class App(tk.Tk):
         return f"{host} {rest[-1]}" if rest else host
 
     def save(self):
-        dest = self.dest.get().strip()
-        if not dest or not os.path.isdir(dest):
-            messagebox.showerror("Errore", "Scegli una cartella di destinazione valida.")
-            return
-        folder = os.path.join(dest, re.sub(r'[<>:"/\\|?*]', "_", self.folder_name()))
-        base, k = folder, 2
-        while os.path.exists(folder) and os.listdir(folder):
-            folder = f"{base}_{k}"
-            k += 1
+        if self.custom_on.get():
+            folder = self.custom.get().strip()
+            if not folder:
+                messagebox.showerror("Errore", "Scegli la cartella delle immagini.")
+                return
+            folder = os.path.normpath(folder)
+        else:
+            dest = self.dest.get().strip()
+            if not dest or not os.path.isdir(dest):
+                messagebox.showerror("Errore", "Scegli una cartella di destinazione valida.")
+                return
+            folder = os.path.join(dest, re.sub(r'[<>:"/\\|?*]', "_", self.folder_name()))
+        overwrite = False
+        if os.path.isfile(folder) or (os.path.isdir(folder) and os.listdir(folder)):
+            scelta = self.ask_conflict(folder) if self.ask_exists.get() else "salta"
+            if scelta == "salta":
+                self.set_status(f"Cartella già presente, salvataggio saltato: {folder}")
+                messagebox.showinfo("Saltato", f"La cartella esiste già, non ho salvato nulla:\n{folder}")
+                return
+            if scelta == "nuova":
+                base, k = folder, 2
+                while os.path.exists(folder):
+                    folder = f"{base}_{k}"
+                    k += 1
+            else:
+                overwrite = True
         os.makedirs(folder, exist_ok=True)
         width = max(3, len(str(len(self.files))))
         for i, src in enumerate(self.files, 1):
-            shutil.move(src, os.path.join(folder, f"{i:0{width}d}.jpg"))
+            dst = os.path.join(folder, f"{i:0{width}d}.jpg")
+            if overwrite and os.path.exists(dst):
+                os.remove(dst)
+            shutil.move(src, dst)
         n = len(self.files)
         self.files = []
         self.cleanup_tmp()
         self.btn_ok.config(state="disabled")
         self.set_status(f"Fatto: {n} immagini salvate in {folder}")
-        messagebox.showinfo("Completato", f"{n} immagini salvate in:\n{folder}")
+        if self.show_done(n, folder):
+            self.clear()
+            self.set_status(f"Fatto: {n} immagini salvate in {folder}")
+
+    def show_done(self, n, folder):
+        """Popup di fine salvataggio. Ritorna True se l'utente sceglie 'OK e pulisci'."""
+        win = tk.Toplevel(self)
+        win.title("Completato")
+        win.transient(self)
+        win.resizable(False, False)
+        ttk.Label(win, text=f"{n} immagini salvate in:\n{folder}", padding=12,
+                  justify="left").pack()
+        res = {"clear": False}
+
+        def pick(c):
+            res["clear"] = c
+            win.destroy()
+
+        bt = ttk.Frame(win, padding=(12, 0, 12, 12))
+        bt.pack()
+        b_ok = ttk.Button(bt, text="OK", command=lambda: pick(False))
+        b_ok.pack(side="left", padx=4)
+        ttk.Button(bt, text="OK e pulisci", command=lambda: pick(True)).pack(side="left", padx=4)
+        b_ok.focus_set()
+        win.bind("<Return>", lambda e: pick(False))
+        win.bind("<Escape>", lambda e: pick(False))
+        win.protocol("WM_DELETE_WINDOW", lambda: pick(False))
+        win.grab_set()
+        self.wait_window(win)
+        return res["clear"]
 
 
 if __name__ == "__main__":
