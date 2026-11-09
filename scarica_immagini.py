@@ -110,6 +110,7 @@ class App(tk.Tk):
         self.files = []      # percorsi temporanei in ordine
         self.photos = []
         self.host = ""
+        self.running = False
 
         top = ttk.Frame(self, padding=8)
         top.pack(fill="x")
@@ -125,6 +126,8 @@ class App(tk.Tk):
         ttk.Button(top, text="Sfoglia...", command=self.browse).grid(row=2, column=3)
         self.btn_find = ttk.Button(top, text="Cerca immagini", command=self.start_find)
         self.btn_find.grid(row=3, column=1, sticky="w", padx=4, pady=6)
+        self.btn_clear = ttk.Button(top, text="Pulisci", command=self.clear)
+        self.btn_clear.grid(row=3, column=2, sticky="w", pady=6)
         top.columnconfigure(2, weight=1)
 
         self.status = tk.StringVar(value="Inserisci l'indirizzo e premi 'Cerca immagini'.")
@@ -181,6 +184,20 @@ class App(tk.Tk):
     def cancel(self):
         self.stop.set()
 
+    def clear(self):
+        """Svuota indirizzo, anteprime e stato. Se una ricerca e' in corso la ferma."""
+        self.stop.set()
+        self.url.set("")
+        for w in self.grid_frame.winfo_children():
+            w.destroy()
+        self.photos = []
+        self.canvas.yview_moveto(0)
+        self.bar.config(value=0)
+        self.btn_ok.config(state="disabled")
+        self.set_status("Inserisci l'indirizzo e premi 'Cerca immagini'.")
+        if not self.running:  # altrimenti ci pensa il thread di ricerca a chiudere
+            self.cleanup_tmp()
+
     def on_close(self):
         self.stop.set()
         self.cleanup_tmp()
@@ -203,6 +220,7 @@ class App(tk.Tk):
         self.btn_ok.config(state="disabled")
         self.btn_cancel.config(state="normal")
         self.host = urlparse(url).netloc.split(":")[0]
+        self.running = True
         threading.Thread(target=self.find_worker, args=(url,), daemon=True).start()
 
     def find_worker(self, url):
@@ -235,7 +253,8 @@ class App(tk.Tk):
                 if i < len(cands):
                     self.stop.wait(delay)
             if self.stop.is_set():
-                self.ui(self.set_status, "Operazione annullata.")
+                if self.url.get().strip():
+                    self.ui(self.set_status, "Operazione annullata.")
                 self.cleanup_tmp()
             elif not self.files:
                 self.ui(self.set_status, "Nessuna immagine JPG trovata in questa pagina.")
@@ -246,10 +265,13 @@ class App(tk.Tk):
         except Exception as e:
             self.ui(self.set_status, f"Errore: {e}")
         finally:
+            self.running = False
             self.ui(lambda: self.btn_find.config(state="normal"))
             self.ui(lambda: self.btn_cancel.config(state="disabled"))
 
     def add_thumb(self, n, path):
+        if self.stop.is_set():
+            return
         try:
             im = Image.open(path)
             im.draft("RGB", (THUMB * 2, THUMB * 2))

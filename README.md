@@ -47,6 +47,7 @@ Poi nella finestra:
 1. scrivi l'indirizzo della pagina;
 2. imposta la pausa in ms e scegli la cartella di destinazione con **Sfoglia...**;
 3. premi **Cerca immagini** e controlla le anteprime;
+   (**Pulisci** accanto al pulsante svuota l'indirizzo e le anteprime, e ferma una ricerca in corso);
 4. premi **OK, salva nella cartella**.
 
 ## Limiti
