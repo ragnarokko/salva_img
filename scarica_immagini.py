@@ -227,6 +227,7 @@ class App(tk.Tk):
         win.bind("<Return>", lambda e: pick("salta"))
         win.bind("<Escape>", lambda e: pick("salta"))
         win.protocol("WM_DELETE_WINDOW", lambda: pick("salta"))
+        self.center(win)
         win.grab_set()
         self.wait_window(win)
         return res["v"]
@@ -398,6 +399,13 @@ class App(tk.Tk):
             self.clear()
             self.set_status(f"Fatto: {n} immagini salvate in {folder}")
 
+    def center(self, win):
+        """Mette il popup al centro della finestra principale."""
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_reqwidth()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_reqheight()) // 2
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
+
     def show_done(self, n, folder):
         """Popup di fine salvataggio. Ritorna True se l'utente sceglie 'OK e pulisci'."""
         win = tk.Toplevel(self)
@@ -421,6 +429,7 @@ class App(tk.Tk):
         win.bind("<Return>", lambda e: pick(False))
         win.bind("<Escape>", lambda e: pick(False))
         win.protocol("WM_DELETE_WINDOW", lambda: pick(False))
+        self.center(win)
         win.grab_set()
         self.wait_window(win)
         return res["clear"]
